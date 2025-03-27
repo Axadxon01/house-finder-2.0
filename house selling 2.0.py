@@ -16,9 +16,6 @@ import io
 import logging
 import time
 import threading
-from google.oauth2 import id_token
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
 import streamlit.components.v1 as components
 
 # === Config ===
@@ -28,8 +25,6 @@ DATASET_PATH = os.path.join(BASE_PATH, "AmesHousing.csv")
 DATABASE_NAME = os.path.join(BASE_PATH, "houses.db")
 MODEL_FILE = os.path.join(BASE_PATH, "house_price_model.pkl")
 UPLOAD_DIR = os.path.join(BASE_PATH, "uploads")
-CLIENT_SECRETS_FILE = os.path.join(BASE_PATH, "client_secrets.json")  # Google OAuth client secrets file
-SCOPES = ["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"]
 DEFAULT_COORDINATES = [42.0347, -93.6200]  # Ames, Iowa
 
 if not os.path.exists(UPLOAD_DIR):
@@ -59,7 +54,7 @@ def init_db():
 init_db()
 
 # === Language and Theme ===
-language = st.sidebar.selectbox("🌐 Language", ["English", "O‘zbek", "Русский", "Español"])
+language = st.sidebar.selectbox("🌐 Language", ["English", "O‘zbek", "Русский", "Deutsch", "Français", "العربية"])
 theme = st.sidebar.selectbox("🎨 Theme", ["Light", "Dark"])
 translations = {
     "English": {
@@ -71,8 +66,6 @@ translations = {
         "sell": "Sell a House",
         "profile": "Profile",
         "announcements": "Announcements",
-        "google_login": "Login with Google",
-        "manual_login": "Manual Login",
         "search_button": "🔎 Search",
         "sell_button": "List House",
         "interest": "Show Interest",
@@ -87,8 +80,6 @@ translations = {
         "sell": "Uy sotish",
         "profile": "Profil",
         "announcements": "E’lonlar",
-        "google_login": "Google bilan kirish",
-        "manual_login": "Qo‘lda kirish",
         "search_button": "🔎 Qidirish",
         "sell_button": "Uy qo‘shish",
         "interest": "Qiziqish bildirish",
@@ -103,28 +94,52 @@ translations = {
         "sell": "Продать дом",
         "profile": "Профиль",
         "announcements": "Объявления",
-        "google_login": "Войти через Google",
-        "manual_login": "Ручной вход",
         "search_button": "🔎 Искать",
         "sell_button": "Добавить дом",
         "interest": "Проявить интерес",
         "map_view": "Посмотреть на карте",
     },
-    "Español": {
-        "welcome": "👋 ¡Bienvenido a House Finder Pro!",
-        "login": "Iniciar sesión",
-        "register": "Registrarse",
-        "logout": "Cerrar sesión",
-        "search": "Buscar casas",
-        "sell": "Vender una casa",
-        "profile": "Perfil",
-        "announcements": "Anuncios",
-        "google_login": "Iniciar sesión con Google",
-        "manual_login": "Inicio manual",
-        "search_button": "🔎 Buscar",
-        "sell_button": "Listar casa",
-        "interest": "Mostrar interés",
-        "map_view": "Ver en el mapa",
+    "Deutsch": {
+        "welcome": "👋 Willkommen bei House Finder Pro!",
+        "login": "Anmelden",
+        "register": "Registrieren",
+        "logout": "Abmelden",
+        "search": "Häuser suchen",
+        "sell": "Haus verkaufen",
+        "profile": "Profil",
+        "announcements": "Ankündigungen",
+        "search_button": "🔎 Suchen",
+        "sell_button": "Haus auflisten",
+        "interest": "Interesse zeigen",
+        "map_view": "Auf der Karte ansehen",
+    },
+    "Français": {
+        "welcome": "👋 Bienvenue sur House Finder Pro !",
+        "login": "Connexion",
+        "register": "S'inscrire",
+        "logout": "Déconnexion",
+        "search": "Rechercher des maisons",
+        "sell": "Vendre une maison",
+        "profile": "Profil",
+        "announcements": "Annonces",
+        "search_button": "🔎 Rechercher",
+        "sell_button": "Lister une maison",
+        "interest": "Montrer de l'intérêt",
+        "map_view": "Voir sur la carte",
+    },
+    "العربية": {
+        "welcome": "👋 مرحبًا بك في House Finder Pro!",
+        "login": "تسجيل الدخول",
+        "register": "التسجيل",
+        "logout": "تسجيل الخروج",
+        "search": "البحث عن منازل",
+        "sell": "بيع منزل",
+        "profile": "الملف الشخصي",
+        "announcements": "الإعلانات",
+        "search_button": "🔎 بحث",
+        "sell_button": "إدراج منزل",
+        "interest": "إظهار الاهتمام",
+        "map_view": "عرض على الخريطة",
     }
 }
 t = translations[language]
@@ -176,29 +191,6 @@ def manual_login(username, password):
         return user[0] if user else None
     except Exception as e:
         logging.error(f"Manual login failed: {e}")
-        return None
-
-def google_login():
-    try:
-        flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
-        creds = flow.run_local_server(port=0)
-        idinfo = id_token.verify_oauth2_token(creds.id_token, Request(), flow.client_config["client_id"])
-        email = idinfo["email"]
-        username = email.split("@")[0]
-        conn = sqlite3.connect(DATABASE_NAME)
-        c = conn.cursor()
-        c.execute("SELECT id FROM users WHERE email = ?", (email,))
-        user = c.fetchone()
-        if not user:
-            c.execute("INSERT INTO users (username, email) VALUES (?, ?)", (username, email))
-            conn.commit()
-            c.execute("SELECT id FROM users WHERE email = ?", (email,))
-            user = c.fetchone()
-        conn.close()
-        return user[0]
-    except Exception as e:
-        logging.error(f"Google login failed: {e}")
-        st.error("Google login failed.")
         return None
 
 if "user_id" not in st.session_state:
@@ -260,24 +252,16 @@ if "notifications" not in st.session_state:
 # === Pages ===
 if page == t["login"]:
     st.title(t["login"])
-    login_option = st.radio("Login Method", [t["google_login"], t["manual_login"]])
-    if login_option == t["google_login"]:
-        if st.button(t["google_login"]):
-            user_id = google_login()
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        if st.form_submit_button(t["login"]):
+            user_id = manual_login(username, password)
             if user_id:
                 st.session_state.user_id = user_id
-                st.success("Logged in with Google!")
-    else:
-        with st.form("login_form"):
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
-            if st.form_submit_button(t["login"]):
-                user_id = manual_login(username, password)
-                if user_id:
-                    st.session_state.user_id = user_id
-                    st.success("Logged in successfully!")
-                else:
-                    st.error("Invalid credentials.")
+                st.success("Logged in successfully!")
+            else:
+                st.error("Invalid credentials.")
 
 elif page == t["register"]:
     st.title(t["register"])
