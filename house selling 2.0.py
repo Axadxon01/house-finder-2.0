@@ -206,7 +206,7 @@ if "user_id" not in st.session_state:
 
 # === Navigation ===
 page = st.sidebar.radio("📑 Navigate", [t["login"], t["register"], t["search"], t["sell"], t["profile"], t["announcements"]], 
-                        disabled=not st.session_state.user_id and page not in [t["login"], t["register"]])
+                        disabled=not st.session_state.user_id if "page" not in locals() else (not st.session_state.user_id and page not in [t["login"], t["register"]]))
 
 # === Load Data and Model ===
 @st.cache_data
