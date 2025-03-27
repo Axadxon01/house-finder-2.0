@@ -19,10 +19,20 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="🏠 House Finder Pro", layout="wide", initial_sidebar_state="expanded")
 BASE_PATH = os.path.dirname(__file__)
 DATASET_PATH = os.path.join(BASE_PATH, "AmesHousing.csv")
-DATABASE_NAME = "/data/houses.db"  # Use persistent storage on Streamlit Cloud
+DATA_DIR = "/data"  # Define the data directory
+DATABASE_NAME = os.path.join(DATA_DIR, "houses.db")  # Use persistent storage on Streamlit Cloud
 MODEL_FILE = os.path.join(BASE_PATH, "house_price_model.pkl")
 UPLOAD_DIR = os.path.join(BASE_PATH, "uploads")
 DEFAULT_COORDINATES = [42.0347, -93.6200]  # Ames, Iowa
+
+# Create the /data directory if it doesn't exist
+if not os.path.exists(DATA_DIR):
+    try:
+        os.makedirs(DATA_DIR)
+        logging.info(f"Created directory: {DATA_DIR}")
+    except Exception as e:
+        logging.error(f"Failed to create directory {DATA_DIR}: {e}")
+        st.error(f"Failed to create directory {DATA_DIR}: {str(e)}")
 
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
@@ -32,6 +42,7 @@ logging.basicConfig(filename="app.log", level=logging.INFO, format="%(asctime)s 
 
 # === Database Setup ===
 def init_db():
+    conn = None  # Initialize conn to None
     try:
         conn = sqlite3.connect(DATABASE_NAME)
         c = conn.cursor()
@@ -42,9 +53,10 @@ def init_db():
         conn.commit()
     except Exception as e:
         logging.error(f"Database initialization failed: {e}")
-        st.error("Database initialization failed.")
+        st.error(f"Database initialization failed: {str(e)}")
     finally:
-        conn.close()
+        if conn is not None:  # Only close if conn was successfully created
+            conn.close()
 
 init_db()
 
