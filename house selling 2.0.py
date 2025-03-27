@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import os
-import hashlib
 import folium
 from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
@@ -14,15 +13,13 @@ import base64
 from PIL import Image
 import io
 import logging
-import time
-import threading
 import streamlit.components.v1 as components
 
 # === Config ===
 st.set_page_config(page_title="🏠 House Finder Pro", layout="wide", initial_sidebar_state="expanded")
 BASE_PATH = os.path.dirname(__file__)
 DATASET_PATH = os.path.join(BASE_PATH, "AmesHousing.csv")
-DATABASE_NAME = os.path.join(BASE_PATH, "houses.db")
+DATABASE_NAME = "/data/houses.db"  # Use persistent storage on Streamlit Cloud
 MODEL_FILE = os.path.join(BASE_PATH, "house_price_model.pkl")
 UPLOAD_DIR = os.path.join(BASE_PATH, "uploads")
 DEFAULT_COORDINATES = [42.0347, -93.6200]  # Ames, Iowa
@@ -38,12 +35,10 @@ def init_db():
     try:
         conn = sqlite3.connect(DATABASE_NAME)
         c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT, email TEXT)''')
         c.execute('''CREATE TABLE IF NOT EXISTS listings (
-            id INTEGER PRIMARY KEY, user_id INTEGER, price REAL, bedrooms INTEGER, year_built INTEGER, 
+            id INTEGER PRIMARY KEY, price REAL, bedrooms INTEGER, year_built INTEGER, 
             garage_cars INTEGER, lot_area INTEGER, overall_qual INTEGER, image_path TEXT, expires_at TEXT, 
-            lat REAL, lon REAL, interest_count INTEGER DEFAULT 0,
-            FOREIGN KEY (user_id) REFERENCES users(id))''')
+            lat REAL, lon REAL, interest_count INTEGER DEFAULT 0)''')
         conn.commit()
     except Exception as e:
         logging.error(f"Database initialization failed: {e}")
@@ -54,14 +49,25 @@ def init_db():
 init_db()
 
 # === Language and Theme ===
-language = st.sidebar.selectbox("🌐 Language", ["English", "O‘zbek", "Русский", "Deutsch", "Français", "العربية"])
-theme = st.sidebar.selectbox("🎨 Theme", ["Light", "Dark"])
+if "language" not in st.session_state:
+    st.session_state.language = "English"
+if "theme" not in st.session_state:
+    st.session_state.theme = "Light"
+
+language = st.sidebar.selectbox("🌐 Language", ["English", "O‘zbek", "Русский", "Deutsch", "Français", "العربية"], 
+                                index=["English", "O‘zbek", "Русский", "Deutsch", "Français", "العربية"].index(st.session_state.language))
+theme = st.sidebar.selectbox("🎨 Theme", ["Light", "Dark"], 
+                             index=["Light", "Dark"].index(st.session_state.theme))
+
+# Update session state when selections change
+if language != st.session_state.language:
+    st.session_state.language = language
+if theme != st.session_state.theme:
+    st.session_state.theme = theme
+
 translations = {
     "English": {
         "welcome": "👋 Welcome to House Finder Pro!",
-        "login": "Login",
-        "register": "Register",
-        "logout": "Logout",
         "search": "Search Houses",
         "sell": "Sell a House",
         "profile": "Profile",
@@ -73,9 +79,6 @@ translations = {
     },
     "O‘zbek": {
         "welcome": "👋 Uy Qidiruv Pro-ga xush kelibsiz!",
-        "login": "Kirish",
-        "register": "Ro‘yxatdan o‘tish",
-        "logout": "Chiqish",
         "search": "Uylarni qidirish",
         "sell": "Uy sotish",
         "profile": "Profil",
@@ -87,9 +90,6 @@ translations = {
     },
     "Русский": {
         "welcome": "👋 Добро пожаловать в House Finder Pro!",
-        "login": "Вход",
-        "register": "Регистрация",
-        "logout": "Выход",
         "search": "Поиск домов",
         "sell": "Продать дом",
         "profile": "Профиль",
@@ -101,9 +101,6 @@ translations = {
     },
     "Deutsch": {
         "welcome": "👋 Willkommen bei House Finder Pro!",
-        "login": "Anmelden",
-        "register": "Registrieren",
-        "logout": "Abmelden",
         "search": "Häuser suchen",
         "sell": "Haus verkaufen",
         "profile": "Profil",
@@ -115,9 +112,6 @@ translations = {
     },
     "Français": {
         "welcome": "👋 Bienvenue sur House Finder Pro !",
-        "login": "Connexion",
-        "register": "S'inscrire",
-        "logout": "Déconnexion",
         "search": "Rechercher des maisons",
         "sell": "Vendre une maison",
         "profile": "Profil",
@@ -129,9 +123,6 @@ translations = {
     },
     "العربية": {
         "welcome": "👋 مرحبًا بك في House Finder Pro!",
-        "login": "تسجيل الدخول",
-        "register": "التسجيل",
-        "logout": "تسجيل الخروج",
         "search": "البحث عن منازل",
         "sell": "بيع منزل",
         "profile": "الملف الشخصي",
@@ -162,43 +153,29 @@ else:
         </style>
     """, unsafe_allow_html=True)
 
-# === Authentication ===
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def register_user(username, password, email):
-    try:
-        conn = sqlite3.connect(DATABASE_NAME)
-        c = conn.cursor()
-        c.execute("INSERT INTO users (username, password, email) VALUES (?, ?, ?)", (username, hash_password(password), email))
-        conn.commit()
-        st.success(t["register"] + " successful!")
-    except sqlite3.IntegrityError:
-        st.error("Username already exists.")
-    except Exception as e:
-        logging.error(f"Registration failed: {e}")
-        st.error("Registration failed.")
-    finally:
-        conn.close()
-
-def manual_login(username, password):
-    try:
-        conn = sqlite3.connect(DATABASE_NAME)
-        c = conn.cursor()
-        c.execute("SELECT id FROM users WHERE username = ? AND password = ?", (username, hash_password(password)))
-        user = c.fetchone()
-        conn.close()
-        return user[0] if user else None
-    except Exception as e:
-        logging.error(f"Manual login failed: {e}")
-        return None
-
-if "user_id" not in st.session_state:
-    st.session_state.user_id = None
+# Add RTL support for Arabic
+if language == "العربية":
+    st.markdown("""
+        <style>
+            body {direction: rtl; text-align: right;}
+            .stSidebar {direction: rtl; text-align: right;}
+            .stForm {direction: rtl; text-align: right;}
+            .stRadio > div {flex-direction: row-reverse;}
+            .stButton>button {float: right;}
+            .card {direction: rtl; text-align: right;}
+        </style>
+    """, unsafe_allow_html=True)
 
 # === Navigation ===
-page = st.sidebar.radio("📑 Navigate", [t["login"], t["register"], t["search"], t["sell"], t["profile"], t["announcements"]], 
-                        disabled=not st.session_state.user_id if "page" not in locals() else (not st.session_state.user_id and page not in [t["login"], t["register"]]))
+if "page" not in st.session_state:
+    st.session_state.page = t["search"]
+
+page = st.sidebar.radio("📑 Navigate", [t["search"], t["sell"], t["profile"], t["announcements"]], 
+                        index=[t["search"], t["sell"], t["profile"], t["announcements"]].index(st.session_state.page))
+
+# Update session state when the page changes
+if page != st.session_state.page:
+    st.session_state.page = page
 
 # === Load Data and Model ===
 @st.cache_data
@@ -207,7 +184,6 @@ def load_dataframe():
         return pd.read_csv(DATASET_PATH)
     except Exception as e:
         logging.error(f"Data loading failed: {e}")
-        st.error("❌ Dataset not found.")
         return pd.DataFrame()
 
 df = load_dataframe()
@@ -224,55 +200,17 @@ def load_model():
             model.fit(X, y)
             joblib.dump(model, MODEL_FILE)
             return model
-        return None
+        else:
+            return None
 
 model = load_model()
 
-# === Real-Time Updates ===
-def poll_listings():
-    while True:
-        if st.session_state.user_id:
-            try:
-                conn = sqlite3.connect(DATABASE_NAME)
-                expiring = pd.read_sql_query("SELECT * FROM listings WHERE user_id = ? AND expires_at <= ?", 
-                                             (st.session_state.user_id, (datetime.now() + timedelta(days=3)).isoformat()))
-                conn.close()
-                if not expiring.empty:
-                    st.session_state.notifications = f"🔔 {len(expiring)} listings expiring soon!"
-                else:
-                    st.session_state.notifications = None
-            except Exception as e:
-                logging.error(f"Polling failed: {e}")
-        time.sleep(60)  # Poll every minute
-
-if "notifications" not in st.session_state:
-    st.session_state.notifications = None
-    threading.Thread(target=poll_listings, daemon=True).start()
+# Display a warning if the dataset or model is not available
+if df.empty or model is None:
+    st.sidebar.warning("⚠️ Dataset or model not found. Some features (e.g., price prediction) may not work. Please ensure AmesHousing.csv is uploaded to the project directory.")
 
 # === Pages ===
-if page == t["login"]:
-    st.title(t["login"])
-    with st.form("login_form"):
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        if st.form_submit_button(t["login"]):
-            user_id = manual_login(username, password)
-            if user_id:
-                st.session_state.user_id = user_id
-                st.success("Logged in successfully!")
-            else:
-                st.error("Invalid credentials.")
-
-elif page == t["register"]:
-    st.title(t["register"])
-    with st.form("register_form"):
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        email = st.text_input("Email")
-        if st.form_submit_button(t["register"]):
-            register_user(username, password, email)
-
-elif page == t["search"]:
+if page == t["search"]:
     st.title(t["search"])
     with st.form("search_form"):
         budget = st.number_input("Max Budget", value=250000)
@@ -330,14 +268,14 @@ elif page == t["sell"]:
         if st.form_submit_button(t["sell_button"]):
             try:
                 if image:
-                    image_path = os.path.join(UPLOAD_DIR, f"{st.session_state.user_id}_{datetime.now().timestamp()}.jpg")
+                    image_path = os.path.join(UPLOAD_DIR, f"{datetime.now().timestamp()}.jpg")
                     with open(image_path, "wb") as f:
                         f.write(image.read())
                 conn = sqlite3.connect(DATABASE_NAME)
                 c = conn.cursor()
                 expires_at = (datetime.now() + timedelta(days=expires_in)).isoformat()
-                c.execute("INSERT INTO listings (user_id, price, bedrooms, year_built, garage_cars, lot_area, overall_qual, image_path, expires_at, lat, lon) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                          (st.session_state.user_id, price, bedrooms, year_built, garage_cars, lot_area, overall_qual, image_path, expires_at, lat, lon))
+                c.execute("INSERT INTO listings (price, bedrooms, year_built, garage_cars, lot_area, overall_qual, image_path, expires_at, lat, lon) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                          (price, bedrooms, year_built, garage_cars, lot_area, overall_qual, image_path, expires_at, lat, lon))
                 conn.commit()
                 conn.close()
                 st.success("House listed successfully!")
@@ -347,9 +285,7 @@ elif page == t["sell"]:
 
 elif page == t["profile"]:
     st.title(t["profile"])
-    if st.button(t["logout"]):
-        st.session_state.user_id = None
-        st.success("Logged out successfully!")
+    st.write("Welcome to your profile!")
 
 elif page == t["announcements"]:
     st.title(t["announcements"])
@@ -363,10 +299,6 @@ elif page == t["announcements"]:
     except Exception as e:
         logging.error(f"Announcements failed: {e}")
         st.error("Failed to load announcements.")
-
-# === Notifications ===
-if st.session_state.notifications:
-    st.sidebar.markdown(f"<div style='background-color:#ffcc00;padding:10px;border-radius:5px;'>{st.session_state.notifications}</div>", unsafe_allow_html=True)
 
 # === UI/UX Enhancements ===
 st.markdown("""
