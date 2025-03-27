@@ -22,15 +22,17 @@ from google.auth.transport.requests import Request
 import streamlit.components.v1 as components
 
 # === Config ===
-st.set_page_config(page_title="🏠 House Finder Pro", layout="wide", initial_sidebar_state="expanded")
 BASE_PATH = os.path.dirname(__file__)
+DATA_DIR = os.path.join(BASE_PATH, "data")  # ✅ Safe path within the project folder
 DATASET_PATH = os.path.join(BASE_PATH, "AmesHousing.csv")
-DATABASE_NAME = os.path.join(BASE_PATH, "houses.db")
+DATABASE_NAME = os.path.join(DATA_DIR, "houses.db")
 MODEL_FILE = os.path.join(BASE_PATH, "house_price_model.pkl")
 UPLOAD_DIR = os.path.join(BASE_PATH, "uploads")
-CLIENT_SECRETS_FILE = os.path.join(BASE_PATH, "client_secrets.json")  # Google OAuth client secrets file
-SCOPES = ["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"]
 DEFAULT_COORDINATES = [42.0347, -93.6200]  # Ames, Iowa
+
+# Create directories if not exist
+os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
