@@ -1,10 +1,8 @@
-streamlit==1.36.0
-pandas==2.2.2
-xgboost
-scikit-learn
-joblib
-folium
-streamlit-folium
-google-auth
-google-auth-oauthlib
-
+streamlit>=1.50
+pandas>=2.2
+numpy>=1.26
+scikit-learn>=1.4
+# Pinned: the saved model in models/ is version-specific. With another version
+# the app detects the mismatch and retrains automatically (~15 s on first start).
+xgboost==3.4.1
+plotly>=5.24
